@@ -143,6 +143,14 @@ input[type=file]{display:none}
 .savebar{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .parc-tab td,.parc-tab th{padding:6px 8px;font-size:12.5px}
 .cfg-nav{margin-bottom:14px}
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:290px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.35);padding:6px;display:flex;flex-direction:column}
+.menu button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 12px;border:0;background:transparent;border-radius:6px;text-align:left;color:var(--text);font-size:13px}
+.menu button small{color:var(--muted);font-size:11.5px}
+.menu button:hover{background:var(--surface2)}
+.menu button.on{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.menu button.on small{color:var(--accent);opacity:.8}
+@media(max-width:760px){.menu{position:fixed;left:12px;right:12px;top:auto;bottom:calc(84px + env(safe-area-inset-bottom,0px));min-width:0}.view-title .actions .menu-wrap{flex:1;display:flex}.view-title .actions .menu-wrap>.btn{flex:1}}
 .meta{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
 .meta .hbar-l{align-items:baseline}
 #gate{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:var(--bg);padding:16px}
@@ -262,7 +270,7 @@ const CONFIG={
   contasPermitidas:['willyanwwtt@gmail.com','baxega@gmail.com','mzapia@gmail.com','breno324galvao@gmail.com'],   /* só estas contas Google conseguem entrar; vazio = qualquer conta */
   inatividadeMin:15                              /* minutos sem uso até bloquear a tela */
 };
-const VERSAO='0.9.3';
+const VERSAO='0.9.4';
 const TODAY=new Date();TODAY.setHours(0,0,0,0);
 const now=()=>new Date().toISOString();
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
@@ -596,17 +604,33 @@ function renderConfig(){
 }
 
 /* ---------- Gestão ---------- */
-const GS={mes:'',tipo:'',cat:'',q:'',sort:'data',dir:-1,lim:40};
+const GS={mes:'',tipo:'',cat:'',q:'',ord:'data_desc',lim:40,menu:false};
+const ORDENS=[
+  ['venc_asc','Data de pagamento/vencimento','mais próximos primeiro'],
+  ['venc_desc','Data de pagamento/vencimento','mais distantes primeiro'],
+  ['data_desc','Lançamento','dos mais recentes aos mais antigos'],
+  ['data_asc','Lançamento','dos mais antigos aos mais recentes'],
+  ['valor_desc','Valor','do maior para o menor'],
+  ['valor_asc','Valor','do menor para o maior'],
+  ['pend','Pendentes primeiro','depois os pagos, por vencimento'],
+  ['desc_asc','Descrição','de A a Z'],
+  ['cat_asc','Categoria','de A a Z, depois por data'],
+  ['cadastro_desc','Cadastrados por último','ordem em que você lançou ou editou']];
+function ordenar(rows){const o=GS.ord,cmpS=(a,b)=>a.localeCompare(b,'pt-BR'),vc=t=>dataCaixa(t);
+  const f={venc_asc:(a,b)=>cmpS(vc(a),vc(b))||cmpS(a.data,b.data),venc_desc:(a,b)=>cmpS(vc(b),vc(a))||cmpS(b.data,a.data),data_desc:(a,b)=>cmpS(b.data,a.data)||cmpS(b.atualizadoEm||'',a.atualizadoEm||''),data_asc:(a,b)=>cmpS(a.data,b.data)||cmpS(a.atualizadoEm||'',b.atualizadoEm||''),valor_desc:(a,b)=>b.valor-a.valor||cmpS(b.data,a.data),valor_asc:(a,b)=>a.valor-b.valor||cmpS(b.data,a.data),pend:(a,b)=>((a._k==='d'&&!a.pago)?0:1)-((b._k==='d'&&!b.pago)?0:1)||cmpS(vc(a),vc(b)),desc_asc:(a,b)=>cmpS(a.desc.toLowerCase(),b.desc.toLowerCase())||cmpS(b.data,a.data),cat_asc:(a,b)=>cmpS((a._k==='r'?'~'+(a.categoria||''):a.categoria).toLowerCase(),(b._k==='r'?'~'+(b.categoria||''):b.categoria).toLowerCase())||cmpS(b.data,a.data),cadastro_desc:(a,b)=>cmpS(b.atualizadoEm||'',a.atualizadoEm||'')||cmpS(b.data,a.data)}[o]||((a,b)=>cmpS(b.data,a.data));
+  return rows.slice().sort(f)}
 function renderGestao(){
   const ms=monthsList();
   let rows=lancamentos().filter(t=>(!GS.mes||mk(t.data)===GS.mes)&&(!GS.tipo||(GS.tipo==='r'?t._k==='r':GS.tipo==='d'?t._k==='d':GS.tipo==='pend'?(t._k==='d'&&!t.pago):GS.tipo==='rec'?t.recorrente:GS.tipo==='cartao'?t.meio==='cartao':GS.tipo==='parc'?!!t.grupoId:true))&&(!GS.cat||t.categoria===GS.cat)&&(!GS.q||t.desc.toLowerCase().includes(GS.q.toLowerCase())));
-  const k=GS.sort;rows.sort((a,b)=>{let x=a[k],y=b[k];if(k==='valor'){x=a._k==='r'?a.valor:-a.valor;y=b._k==='r'?b.valor:-b.valor}if(typeof x==='string'){x=x.toLowerCase();y=(y||'').toLowerCase()}return (x>y?1:x<y?-1:b.data.localeCompare(a.data))*GS.dir});
+  rows=ordenar(rows);
   const R=sum(rows.filter(t=>t._k==='r')),D=sum(rows.filter(t=>t._k==='d')),pend=rows.filter(t=>t._k==='d'&&!t.pago);
-  const th=(l,key,cls)=>[l+(GS.sort===key?(GS.dir>0?' ▲':' ▼'):''),(cls||'')+' sortable','onclick="App.sort(\''+key+'\')"'];
+  const th=(l,key,cls)=>{const on=GS.ord.indexOf(key)===0;return [l+(on?(GS.ord.endsWith('asc')?' ▲':' ▼'):''),(cls||'')+' sortable','onclick="App.sort(\''+key+'\')"']};
+  const atual=ORDENS.find(x=>x[0]===GS.ord)||ORDENS[2];
+  const menu='<div class="menu-wrap"><button class="btn ghost sm" onclick="App.ordMenu(event)" title="Organizar: '+esc(atual[1]+', '+atual[2])+'">⇅ Organizar</button>'+(GS.menu?'<div class="menu" role="menu">'+ORDENS.map(o=>'<button role="menuitem" class="'+(o[0]===GS.ord?'on':'')+'" onclick="App.ord(\''+o[0]+'\')"><span>'+o[1]+'</span><small>'+o[2]+'</small></button>').join('')+'</div>':'')+'</div>';
   const vis=rows.slice(0,GS.lim);
-  const body=vis.map(t=>{const c=t._k==='d'&&t.meio==='cartao'&&cartaoDe(t.cartao);const venc=c?faturaDe(t.data,c).vence:null;return '<tr>'+td('Data',dBR(t.data))+td('Descrição',esc(t.desc)+(c?' <span class="badge" title="Cartão de crédito">'+esc(c.nome)+'</span>':''))+td('Categoria',t._k==='r'?'<span class="badge ok">'+esc(t.categoria||'Receita')+'</span>':'<span class="badge">'+esc(t.categoria)+'</span>')+td('Tipo',(t.tipo==='fixa'?'Fixa':'Variável')+(t.recorrente?', mensal'+(t.repeteAte?' até '+mesCurto(t.repeteAte)+'/'+t.repeteAte.slice(2,4):''):'')+(t.grupoId?', parcela '+t.parcela+'/'+t.parcelas:''),'muted')+td('Status',t._k==='d'?'<span class="badge '+(t.pago?'ok':'medio')+' clickable" onclick="App.pagar(\''+t.id+'\')" title="Clique para alternar">'+(t.pago?(c?'Fatura paga':'Pago'):(c?'Fatura '+dCurto(venc):'Pendente'))+'</span>':'<span class="badge ok">Recebido</span>')+td('Valor',(t._k==='r'?'+':'−')+fmt(t.valor),'num '+(t._k==='r'?'pos':'neg'))+'<td class="acts"><button class="btn sm" onclick="App.edit(\''+t._k+'\',\''+t.id+'\')">Editar</button><button class="btn sm" onclick="App.dup(\''+t._k+'\',\''+t.id+'\')" title="Copiar para hoje">Duplicar</button><button class="btn sm danger" onclick="App.del(\''+t._k+'\',\''+t.id+'\')">Excluir</button></td></tr>'}).join('');
+  const body=vis.map(t=>{const c=t._k==='d'&&t.meio==='cartao'&&cartaoDe(t.cartao);const venc=c?faturaDe(t.data,c).vence:null;return '<tr>'+td('Data',dBR(t.data)+(c?'<br><small class="muted">vence '+dCurto(venc)+'</small>':''))+td('Descrição',esc(t.desc)+(c?' <span class="badge" title="Cartão de crédito">'+esc(c.nome)+'</span>':''))+td('Categoria',t._k==='r'?'<span class="badge ok">'+esc(t.categoria||'Receita')+'</span>':'<span class="badge">'+esc(t.categoria)+'</span>')+td('Tipo',(t.tipo==='fixa'?'Fixa':'Variável')+(t.recorrente?', mensal'+(t.repeteAte?' até '+mesCurto(t.repeteAte)+'/'+t.repeteAte.slice(2,4):''):'')+(t.grupoId?', parcela '+t.parcela+'/'+t.parcelas:''),'muted')+td('Status',t._k==='d'?'<span class="badge '+(t.pago?'ok':'medio')+' clickable" onclick="App.pagar(\''+t.id+'\')" title="Clique para alternar">'+(t.pago?(c?'Fatura paga':'Pago'):(c?'Fatura '+dCurto(venc):'Pendente'))+'</span>':'<span class="badge ok">Recebido</span>')+td('Valor',(t._k==='r'?'+':'−')+fmt(t.valor),'num '+(t._k==='r'?'pos':'neg'))+'<td class="acts"><button class="btn sm" onclick="App.edit(\''+t._k+'\',\''+t.id+'\')">Editar</button><button class="btn sm" onclick="App.dup(\''+t._k+'\',\''+t.id+'\')" title="Copiar para hoje">Duplicar</button><button class="btn sm danger" onclick="App.del(\''+t._k+'\',\''+t.id+'\')">Excluir</button></td></tr>'}).join('');
   const filtroAtivo=GS.mes||GS.tipo||GS.cat||GS.q;
-  return title('Gestão de lançamentos',rows.length+' registro(s): entradas '+fmt(R)+', saídas '+fmt(D)+(pend.length?', '+pend.length+' pendente(s) somando '+fmt(sum(pend)):''),'<button class="btn primary" onclick="App.go(\'cadastros\')">Novo lançamento</button>')
+  return title('Gestão de lançamentos',rows.length+' registro(s): entradas '+fmt(R)+', saídas '+fmt(D)+(pend.length?', '+pend.length+' pendente(s) somando '+fmt(sum(pend)):''),menu+'<button class="btn primary" onclick="App.go(\'cadastros\')">Novo lançamento</button>')
   +'<div class="card"><div class="filters"><div class="field"><label>Mês</label><select onchange="App.gs(\'mes\',this.value)">'+selOpts([['','Todos']].concat(ms.slice().reverse().map(m=>[m,mesLabel(m)])),GS.mes)+'</select></div><div class="field"><label>Tipo</label><select onchange="App.gs(\'tipo\',this.value)">'+selOpts([['','Todos'],['r','Receitas'],['d','Despesas'],['pend','Pendentes'],['rec','Recorrentes'],['cartao','No cartão de crédito'],['parc','Parcelamentos']],GS.tipo)+'</select></div><div class="field"><label>Categoria</label><select onchange="App.gs(\'cat\',this.value)">'+selOpts([['','Todas']].concat(S.categorias.map(c=>[c,c]),S.categoriasReceita.map(c=>[c,c+' (receita)'])),GS.cat)+'</select></div><div class="field"><label>Buscar</label><input type="search" value="'+esc(GS.q)+'" placeholder="Descrição" oninput="App.gs(\'q\',this.value)"></div>'+(filtroAtivo?'<button class="btn" onclick="App.gsReset()">Limpar</button>':'')+'</div></div>'
   +'<div class="card table-wrap">'+table([th('Data','data'),th('Descrição','desc'),['Categoria'],['Tipo'],['Status'],th('Valor','valor','num'),['']],body||(filtroAtivo?'<tr><td colspan="7" class="empty">Nenhum lançamento com esses filtros.</td></tr>':''),'<tr>'+td('Resumo','Saldo dos registros filtrados')+'<td></td><td></td><td></td><td></td>'+td('Saldo',fmt(R-D),'num '+(R-D>=0?'pos':'neg'))+'<td></td></tr>')+(rows.length>GS.lim?'<div class="more"><button class="btn" onclick="App.mais()">Mostrar mais ('+(rows.length-GS.lim)+' restantes)</button></div>':'')+'</div>';
 }
@@ -739,9 +763,11 @@ window.App={go,back,
   reabrir(){S.ignoradas=[];S.configAtualizadoEm=now();salvar()},
   df(k,v){DF[k]=v;render('dashboard')},dfReset(){Object.assign(DF,{periodo:'mes',de:'',ate:'',cat:'',tipo:'',status:''});render('dashboard')},
   gs(k,v){GS[k]=v;GS.lim=40;render('gestao');if(k==='q'){const i=document.querySelector('#view-gestao input[type=search]');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}}},
-  gsReset(){Object.assign(GS,{mes:'',tipo:'',cat:'',q:'',lim:40});render('gestao')},
+  gsReset(){Object.assign(GS,{mes:'',tipo:'',cat:'',q:'',lim:40,menu:false});render('gestao')},
   gsMes(m){Object.assign(GS,{mes:m,tipo:'',cat:'',q:'',lim:40});go('gestao')},
-  sort(k){if(GS.sort===k)GS.dir*=-1;else{GS.sort=k;GS.dir=k==='desc'?1:-1}render('gestao')},
+  sort(k){const asc=k+'_asc',desc=k+'_desc';GS.ord=GS.ord===desc?asc:GS.ord===asc?desc:(k==='desc'?asc:desc);GS.menu=false;render('gestao')},
+  ord(o){GS.ord=o;GS.menu=false;render('gestao')},
+  ordMenu(e){if(e)e.stopPropagation();GS.menu=!GS.menu;render('gestao')},
   mais(){GS.lim+=40;render('gestao')},
   pjPick(i){const r=PJ_ROWS[i];if(!r)return;const svg=document.querySelector('#view-projecao svg.chart');if(svg){const g=svg.querySelector('#pj-guia'),dot=svg.querySelector('#pj-dot-'+i);svg.querySelectorAll('.dot.sel').forEach(d=>{d.classList.remove('sel');d.setAttribute('r',d.getAttribute('data-r')||'3.2')});if(dot){dot.classList.add('sel');if(!dot.getAttribute('data-r'))dot.setAttribute('data-r',dot.getAttribute('r'));dot.setAttribute('r','6');if(g){g.setAttribute('x1',dot.getAttribute('cx'));g.setAttribute('x2',dot.getAttribute('cx'));g.style.display=''}}}
     const el=document.getElementById('pj-detalhe');if(!el)return;const movs=Object.entries(r.mov).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])),top=movs.slice(0,12),resto=movs.slice(12).reduce((a,m)=>a+m[1],0);
@@ -834,7 +860,7 @@ Object.assign(window.App,{login,
   logout(){if(MODAL)MODAL(false);modal({title:'Sair da conta Google?',body:'<p>Os dados guardados neste navegador serão apagados. Eles continuam salvos no seu Google Drive e voltam quando você entrar de novo.</p>'+(SYNC.pendente?'<p class="warn">Há alterações ainda não enviadas; elas seriam perdidas.</p>':''),ok:'Sair',danger:true}).then(ok=>{if(!ok)return;const t=tokens();if(t&&t.access_token){try{fetch('https://oauth2.googleapis.com/revoke?token='+encodeURIComponent(t.access_token),{method:'POST'}).catch(()=>{})}catch(e){}}limparSessao();lsDel('ww.hint');renderAll();setStatus(statusBase());gate('entrar','Você saiu da conta. Os dados continuam no seu Google Drive.')})},
   _bloquear:()=>bloquear('teste'),_inatividade(ms){CONFIG.inatividadeMin=ms/60000},
   _mesclar:mesclar,_proj:(d,o)=>projecaoDiaria(d,o),_S:()=>S});
-document.addEventListener('click',e=>{const n=e.target.closest('[data-view]');if(n){e.preventDefault();go(n.dataset.view)}});
+document.addEventListener('click',e=>{const n=e.target.closest('[data-view]');if(n){e.preventDefault();go(n.dataset.view)}if(GS.menu&&!e.target.closest('.menu-wrap')){GS.menu=false;render('gestao')}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(MODAL)MODAL(false);else if(EDIT)App.cancelEdit();return}if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='n'||e.key==='N'){go('cadastros');setTimeout(()=>focusDesc('f-l'),50);return}const k=['dashboard','cadastros','gestao','projecao','historico','sugestoes','config'][+e.key-1];if(k)go(k)});
 window.addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS[v]&&v!==CUR)go(v)});
 const gv=document.getElementById('gate-ver');if(gv)gv.textContent='Versão '+VERSAO;
